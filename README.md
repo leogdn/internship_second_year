@@ -6,7 +6,7 @@ then we can detect spoofing.
 
 This internship was focusing on an **AIS spoofing detection and track association algorithm**, my task was to create scenarios and to perform tests of the algorithm.
 
-A scenario is a set 
+A scenario is a set of AIS and radar observations. In this code we assume that the AIS and radar data are synchronised, the AIS data is represented by a a Matlab array `Y` and the radar data by an array `Z`. 
 
 The function `main_T2T.m` is evaluating the track association and the spoofing detection, the user can plot the evolution of the detection error and the association error over time. 
 This function is calling the main algorithm, implemented in the function `T2TA.m`, this function was developped by a by a researcher who has co-supervised my internship. 
