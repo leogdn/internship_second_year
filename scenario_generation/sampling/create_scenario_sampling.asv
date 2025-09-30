@@ -1,0 +1,168 @@
+function [Y,Z,Y_cart,Z_cart,sigmaEst,transMatEst,xMarkov,trajWithSpoofing] = create_scenario_sampling(N,T,Y0,YT,mode,durationSpoofing,transMat,probSpoofedTraj,durSpoofMin,theta,compAngle,sigmaNoise)
+    
+    x_vec = linspace(-3, 3, 10);
+    
+    t_given = linspace(1, T, 10);
+    dim_given = repmat({1}, 1, 10);
+    
+    mu_0 = Y0;
+    Cov_0 = 0.1*eye(4);
+
+    F = [[1, 0.1, 0, 0]; [0, 0.99, 0, 0]; [0, 0, 1, 0.1]; [0, 0, 0, 0.99]];
+    U = diag([0.001, 0.01, 0.001, 0.01]);
+    
+    Y_cart = cell(1,N);
+    Z_cart = cell(1,N);
+    Y = cell(1,N);
+    Z = cell(1,N);
+    ZCenter = cell(1,N);
+
+    K=2;
+
+    estSigmaSpoofing = cell(1,N);
+
+    nSpoofing = zeros(1,N);
+
+    xMarkov = cell(1,N);
+
+    trajWithSpoofing = cell(1,N);
+
+    transMatTracks = cell(1,N);
+
+    for n = 1:N
+        %%Modeling of spoofing
+
+        trajWithSpoofing{n} = rand<probSpoofedTraj; 
+
+        xMarkov{n} = zeros(1, T);
+        changeX = zeros(1, T);
+        changeXShort = zeros(1,T);
+        xMarkov{n}(1) = 1;
+        if trajWithSpoofing{n}
+            if mode ~="givendT"
+                for t = 2:T
+                    xMarkov{n}(t) = randsample(1:K, 1, 'true', transMat(xMarkov{n}(t-1), :)); %Selection of the mode of the system, knowing the mode at time t and the transition matrix
+                    changeXShort(t) = (xMarkov{n}(t) ~= xMarkov{n}(t-1));
+                end
+            else
+                tStartSpoofing = randsample(1:T,1);
+                tEndSpoofing = tStartSpoofing + durationSpoofing;
+                xMarkov{n}(tStartSpoofing:tEndSpoofing) = ones(1,tEndSpoofing - tStartSpoofing + 1);
+            end
+        else
+            xMarkov{n} = ones(1,T);
+        end
+
+        changeXShort(T) = 1;
+        changeXShort(1) = 1;
+        tChangeShort = find(changeXShort);
+        nChangeShort = length(tChangeShort);
+        changeX = changeXShort;
+
+        for iC=1:nChangeShort-1
+            tC = tChangeShort(iC);
+            tNextC = tChangeShort(iC+1);
+            if (tNextC - tC < durSpoofMin) && (xMarkov{n}(tC) == 2)
+                changeX(tC) = 0;
+                changeX(tNextC) = 0;
+                xMarkov{n}(tC:tNextC) = ones(1,tNextC - tC + 1);
+            end
+        end
+
+        changeX(T) = 1;
+        changeX(1) = 1;
+        tChange = find(changeX);
+        nChange = length(tChange);
+        giveTSpoofed = zeros(1,T);
+        X_given_spoofed = cell(1,T);
+        dim_given_spoofed = cell(1,T);
+
+        trajWithSpoofing{n} = (nChange ~= 2);
+
+        %Compute the new estimate of the transition Matrix F
+
+        transMatTracks{n} = zeros(K, K); % Initialize estimated transition matrix for current scenario
+        if trajWithSpoofing{n}
+            for t = 1:T-1
+                transMatTracks{n} = transMatTracks{n} + accumarray([xMarkov{n}(t), xMarkov{n}(t+1)], 1, [K, K]);
+            end
+            sumMat = sum(transMatTracks{n}, 2);
+            transMatTracks{n} = transMatTracks{n}./sumMat;
+        else
+            transMatTracks{n} = nan(K,K);
+        end
+
+        XSpoofed = zeros(4,T);
+        XGenuine = zeros(4,T);
+        
+        XSpoofed(:,1) = Y0;
+        XGenuine(:,1) = Y0;
+
+        for iC = 1:nChange-1
+            tC = tChange(iC);
+            tNextC = tChange(iC+1);
+            YStart = XGenuine(:,tC);
+            YEnd = YStart + (YT - YStart)*(tNextC-tC)/(T-tC);
+            TPath = tNextC-tC+1;
+            [pathGenuine,pathSpoofed] = create_path_sampling(TPath,YStart,YEnd);
+            if xMarkov{n}(tC) == 2
+                XGenuine(:,tC:tNextC) = pathGenuine;
+                XSpoofed(:,tC:tNextC) = pathSpoofed;
+            else
+                XGenuine(:,tC:tNextC) = pathGenuine;
+                XSpoofed(:,tC:tNextC) = pathGenuine;
+            end
+        end
+
+        I_d = eye(4);
+
+        Y{n} = convert_cartesian_to_polar_sampling(XSpoofed);
+        ZCenter{n} = convert_cartesian_to_polar_sampling(XGenuine);
+        Z{n} = ZCenter{n} - theta*I_d(compAngle,:) - sqrt(sigmaNoise).*randn(T,4);
+        estSigmaSpoofing{n} = zeros(4,4);
+
+        Ys = Y{n}(xMarkov{n} == 2,:) - ZCenter{n}(xMarkov{n} == 2,:);
+        nSpoofing(n) = sum(xMarkov{n}==2);
+        if nSpoofing(n)==0
+            estSigmaSpoofing{n} = zeros(4,4);
+        else
+            estSigmaSpoofing{n} = (Ys'*Ys)/nSpoofing(n);
+        end
+
+        disp(Z{n}(:,1)-ZCenter{n}(:,1));
+
+        %Uncomment to get only the position 
+        Y{n}(:,2) = [];
+        Y{n}(:,3) = [];
+        Z{n}(:,2) = [];
+        Z{n}(:,3) = [];
+        % estSigmaSpoofing{n}(:,2) = [];
+        % estSigmaSpoofing{n}(:,3) = [];
+        % estSigmaSpoofing{n}(2,:) = [];
+        % estSigmaSpoofing{n}(3,:) = [];
+
+        %To get the cartesian coordinates taking in account the noise et
+        %the bias
+        [YxArray,YyArray] = pol2cart(Y{n}(:,2),Y{n}(:,1));
+        Y_cart{n}(:,1) = YxArray;
+        Y_cart{n}(:,2) = YyArray;
+        [ZxArray,ZyArray] = pol2cart(Z{n}(:,2),Z{n}(:,1));
+        Z_cart{n}(:,1) = ZxArray;
+        Z_cart{n}(:,2) = ZyArray;
+
+    end
+
+    matStack = cat(3,estSigmaSpoofing{:});
+    sigmaEst = mean(matStack,3,"Weights",nSpoofing);
+    %sigmaEst = mean(matStack,3,'omitnan');
+    %sigmaEst = sum(matStack,3);
+    % sigmaEstMeanSpoofing = mean(cat(3,estSigmaSpoofing{:}),3);
+    % sigmaEst(1,1) = sigmaNoise(1,1);
+    % sigmaEst(1,2) = sigmaNoise(1,3);
+    % sigmaEst(2,1) = sigmaEstMeanSpoofing(1,1);
+    % sigmaEst(2,2) = sigmaEstMeanSpoofing(2,2);
+
+    transMatStack = cat(3,transMatTracks{:});
+    transMatEst = mean(transMatStack,3,'omitnan');
+
+end
