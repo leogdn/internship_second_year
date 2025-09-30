@@ -28,6 +28,8 @@ radius = Inf;
 source_dir = "C:\Users\lgaudin\Desktop\ushant_ais\data";
 %rawData = get_raw_data(source_dir,100);
 
+
+%%Creation of the scenarios from either random data, sampling data or real AIS data
 %[Y,Z] = create_scenario_random(T,N,d,angle_comp,theta,Sigma,F,K);
 [Y,Z,Y_cart,Z_cart,sigmaSpoofing,transMatEst,xMarkov,trajWithSpoofing] = create_scenario_sampling(N,T,Y0,YT,"normal",0,transMat,probSpoofedTraj,durSpoofMin,theta,angle_comp,sigmaNoise);
 %[Y,Z,xMarkov,trajWithSpoofing,duration] = create_scenario_from_data(rawData,F,probSpoofedTraj,Sigma,durSpoofMin,angle_comp,theta,posAntenna,radius);
